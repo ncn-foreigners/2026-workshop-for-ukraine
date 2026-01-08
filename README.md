@@ -17,17 +17,16 @@ install.packages("nonprobsvy")
 
 Repository has the following structure:
 
-+ `codes/` -- scripts for the workshop
-+ `slides/` -- presentation for workshop
+-   `codes/` -- scripts for the workshop:
+    -   `1-practice.R` -- introduction to the package
+    -   `2-practice.R` -- script with exercises
+-   `slides/` -- presentation for workshop \| [slides are here](slides/2026-slides-for-ukraine.pdf)
 
 # Literature
 
-+ Chrostowski, Ł., Chlebicki, P., & Beręsewicz, M. (2025). nonprobsvy--An R package for modern methods for non-probability surveys. arXiv preprint [arXiv:2504.04255](https://arxiv.org/abs/2504.04255). Forthcoming to the Journal of Statistical Software
+-   Chrostowski, Ł., Chlebicki, P., & Beręsewicz, M. (2025). nonprobsvy--An R package for modern methods for non-probability surveys. arXiv preprint [arXiv:2504.04255](https://arxiv.org/abs/2504.04255). Forthcoming to the Journal of Statistical Software
 
 # Acknowledgements
 
-+ The authors’ work has been financed by the National Science Centre in Poland, OPUS 20,
-grant no. 2020/39/B/HS4/00941.
-+ Łukasz Chrostowski was the main developer and maintainer of the package up to version 0.1.0.
-Parts of this paper are based on Łukasz’s Master’s thesis (available at https://github.com/
-ncn-foreigners/graduation-theses). 
+-   The authors’ work has been financed by the National Science Centre in Poland, OPUS 20, grant no. 2020/39/B/HS4/00941.
+-   Łukasz Chrostowski was the main developer and maintainer of the package up to version 0.1.0. Parts of this paper are based on Łukasz’s Master’s thesis (available at https://github.com/ ncn-foreigners/graduation-theses).
