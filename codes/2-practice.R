@@ -1,17 +1,39 @@
-library(nonprobsvy)
-library(survey)
-library(ggplot2)
+# ============================================================================
+# Nonprobability Survey Estimation: IPW, MI, and DR Methods with Exercises
+# ============================================================================
+# This script demonstrates various methods for estimating population parameters
+# from nonprobability survey data using the 'nonprobsvy' package.
+# Includes practical exercises to explore different modeling approaches.
+# ============================================================================
 
-## setup 
+# Load required libraries
+library(nonprobsvy)  # For nonprobability survey estimation
+library(survey)      # For survey sampling methods
+library(ggplot2)     # For data visualization
+
+# ============================================================================
+# SETUP: DATA LOADING AND SURVEY DESIGN
+# ============================================================================
+
+# Load the nonprobability (JVS) survey data
 data("jvs")
-jvs_svy <- svydesign(ids = ~ 1, 
-                     weights = ~ weight,
-                     strata = ~ size + nace + region,
-                     data = jvs)
 
+# Create a survey design object with sampling weights and stratification
+jvs_svy <- svydesign(
+  ids = ~ 1,
+  weights = ~ weight,
+  strata = ~ size + nace + region,
+  data = jvs
+)
+
+# Load the population/administrative data (target population)
 data("admin")
 
-## ----ipw-stadnard----------------------------------------------------------------------------------------------------
+# ============================================================================
+# SECTION 1: INVERSE PROBABILITY WEIGHTING (IPW) - STANDARD METHOD
+# ============================================================================
+
+# Baseline IPW estimation using logit selection model
 est1_logit <- nonprob(
   selection = ~ region,
   target = ~ single_shift,
@@ -20,109 +42,179 @@ est1_logit <- nonprob(
   method_selection = "logit"
 )
 
-### Exercise 1 Add nace and size variables to the model -- compare the results.
+# ============================================================================
+# EXERCISE 1: Add more variables to the selection model
+# ============================================================================
+# TODO: Estimate IPW using region, nace, and size variables
+# Compare results with the baseline model (region only)
+# Are the estimates substantially different?
+# Do confidence intervals overlap?
 
-### Exercise 2 Carry out an analogous inference using probit as the linking function.
+# ============================================================================
+# EXERCISE 2: Use probit linking function instead of logit
+# ============================================================================
+# TODO: Repeat the IPW estimation using probit linking function
+# Compare with logit results - are estimates similar?
+# Are standard errors different?
 
-### Exercise 3 Carry out an analogous inference using cloglog as the linking function.
+# ============================================================================
+# EXERCISE 3: Use complementary log-log (cloglog) linking function
+# ============================================================================
+# TODO: Repeat the IPW estimation using cloglog linking function
+# Compare with logit and probit results
+# Which linking function gives the most stable estimates?
 
-
-est_ipw_standard <- rbind(cbind(est1_logit$output, est1_logit$confidence_interval),
-                          cbind(est1_probit$output, est1_probit$confidence_interval),
-                          cbind(est1_cloglog$output, est1_cloglog$confidence_interval))
-est_ipw_standard$est <- "ipw"
+# Summary table: Compare all three linking functions for standard IPW
+est_ipw_standard <- rbind(
+  extract(est1_logit),
+  extract(est1_probit),
+  extract(est1_cloglog)
+)
+est_ipw_standard$est <- c("ipw (logit)", "ipw (probit)", "ipw (cloglog)")
 rownames(est_ipw_standard) <- NULL
-est_ipw_standard
+print(est_ipw_standard)
 
-
-## ----ipw-structure---------------------------------------------------------------------------------------------------
-str(est1_logit,1)
-
-
-## ----ipw-structure-sel-----------------------------------------------------------------------------------------------
-str(est1_logit$selection,1)
-
-
-## ----ipw-summary-----------------------------------------------------------------------------------------------------
+# Explore the structure of the IPW result object
+str(est1_logit, 1)
+str(est1_logit$selection, 1)
 summary(est1_logit)
 
+# ============================================================================
+# SECTION 2: IPW WITH CALIBRATION (GEE METHOD)
+# ============================================================================
 
-## ----ipw-cal---------------------------------------------------------------------------------------------------------
+# IPW with calibration: Uses Generalized Estimating Equations (GEE)
+# to improve variance estimation and weight stability
 est2_logit <- nonprob(
   selection = ~ size,
   target = ~ single_shift,
   svydesign = jvs_svy,
   data = admin,
   method_selection = "logit",
-  control_selection = control_sel(gee_h_fun = 1, est_method = "gee")
+  control_selection = control_sel(
+    gee_h_fun = 1,
+    est_method = "gee"
+  )
 )
 
-### Exercise 4 Estimate with an another choice for h function.
+# ============================================================================
+# EXERCISE 4: Change covariates in the selection model
+# ============================================================================
+# TODO: Estimate IPW calibration with different covariate sets
+# Try: ~ region, ~ nace, ~ region + nace + size
+# Compare estimates and standard errors across models
+# Does model complexity improve inference?
 
-### Exercise 5 Change the set of dependent variables and compare the results.
 
-### Exercise 6 Carry out an analogous inference using probit as the linking function.
+# ============================================================================
+# EXERCISE 5: Use probit linking function with calibration
+# ============================================================================
+# TODO: Repeat calibrated IPW estimation using probit
+# Compare with logit results from est2_logit
+# Is the method robust to linking function choice?
 
-### Exercise 7 Carry out an analogous inference using cloglog as the linking function.
 
-est_ipw_calib <- rbind(cbind(est2_logit$output, est2_logit$confidence_interval),
-                       cbind(est2_probit$output, est2_probit$confidence_interval),
-                       cbind(est2_cloglog$output, est2_cloglog$confidence_interval))
-est_ipw_calib$est <- "ipw calib"
+# ============================================================================
+# EXERCISE 6: Use cloglog linking function with calibration
+# ============================================================================
+# TODO: Repeat calibrated IPW estimation using cloglog
+# Compare all three linking functions together
+# Which provides the most robust estimates?
+
+# Summary table: Compare calibrated IPW with different linking functions
+est_ipw_calib <- rbind(
+  extract(est2_logit),
+  extract(est2_probit),
+  extract(est2_cloglog)
+)
+est_ipw_calib$est <- c("ipw calib (logit)", "ipw calib (probit)", "ipw calib (cloglog)")
 rownames(est_ipw_calib) <- NULL
-est_ipw_calib
+print(est_ipw_calib)
 
-
-## ----ipw-cal-weights----------------------------------------------------------------------------------------------------
+# Extract and inspect weights from IPW estimations
 admin$ipw1_weight <- weights(est1_logit)
 admin$ipw2_weight <- weights(est2_logit)
+summary(admin$ipw1_weight)
+summary(admin$ipw2_weight)
 
+# Check if weights sum to population size
+c(
+  jvs = sum(weights(jvs_svy)),
+  ipw1_mle = sum(admin$ipw1_weight),
+  ipw2_gee = sum(admin$ipw2_weight)
+)
 
-## ----ipw-cal-totals--------------------------------------------------------------------------------------------------
-c(jvs=sum(weights(jvs_svy)), ipw1_mle=sum(admin$ipw1_weight), ipw2_gee=sum(admin$ipw2_weight))
+# Compare weighted distributions of firm size
+svytotal(~size, jvs_svy)           # Survey totals
+xtabs(ipw1_weight ~ size, admin)   # IPW weighted totals
+xtabs(ipw2_weight ~ size, admin)   # Calibrated IPW weighted totals
 
+# ============================================================================
+# SECTION 3: IPW WITH BOOTSTRAP VARIANCE ESTIMATION
+# ============================================================================
 
-## ----ipw-cal-klasa1--------------------------------------------------------------------------------------------------
-svytotal(~size, jvs_svy)
+# ============================================================================
+# EXERCISE 7: IPW with bootstrap variance estimation
+# ============================================================================
+# TODO: Estimate mean using IPW with bootstrap variance
+# Set seed to 2024-11-27 for reproducibility
+# Try different numbers of bootstrap iterations (num_boot)
+# Compare with analytic variance from est1_logit
+# Are bootstrap confidence intervals wider or narrower?
 
+set.seed(20241127)
 
-## ----ipw-cal-klasa2--------------------------------------------------------------------------------------------------
-xtabs(ipw1_weight ~ size, admin)
-xtabs(ipw2_weight ~ size, admin)
-
-
-## ----ipw-bootstrap---------------------------------------------------------------------------------------------------
-### Exercise 8 Estimate the mean using the inverse probability weighting method with the bootstrap method for variance.
-### In addition, try playing with the number of iterations and arguments
-set.seed(2024-11-27)
-
-## bootstrap here
-est3_logit
-
-## ----ipw-bootstrap-summary-------------------------------------------------------------------------------------------
+est3_logit <- nonprob(
+  selection = ~ region,
+  target = ~ single_shift,
+  svydesign = jvs_svy,
+  data = admin,
+  method_selection = "logit",
+  control_inference = control_inf(
+    var_method = "bootstrap",
+    num_boot = 100
+  )
+)
 summary(est3_logit)
+extract(est3_logit)
 
+# ============================================================================
+# SECTION 4: IPW WITH VARIABLE SELECTION (SCAD)
+# ============================================================================
 
-## ----ipw-scad--------------------------------------------------------------------------------------------------------
-### Exercise 9 Conduct inference with an additional variable selection step, e.g. SCAD
-set.seed(2024-11-27)
+# ============================================================================
+# EXERCISE 8: IPW with SCAD variable selection
+# ============================================================================
+# TODO: Estimate mean using IPW with SCAD variable selection
+# SCAD = Smoothly Clipped Absolute Deviation penalty
+# This automatically selects relevant covariates
+# Set seed to 2024-11-27 for reproducibility
+# Compare selected variables with full model
+# Does variable selection change the point estimate significantly?
+# Are confidence intervals narrower with fewer variables?
 
+set.seed(20241127)
 
-## ----ipw-scad-summary------------------------------------------------------------------------------------------------
-summary(est4_logit)
+# ============================================================================
+# IPW SUMMARY: Compare all IPW variants
+# ============================================================================
 
-
-## ----ipw-comparison---------------------------------------------------------------------------------------------------
-ipw_summary <- rbind(extract(est1_logit$output),
-                     extract(est2_logit$output),
-                     extract(est3_logit$output),
-                     extract(est4_logit$output))
+ipw_summary <- rbind(
+  extract(est1_logit),
+  extract(est2_logit),
+  extract(est3_logit),
+  extract(est4_logit)
+)
 rownames(ipw_summary) <- NULL
 ipw_summary$est <- c("ipw (st)", "ipw (cal)", "ipw (boot)", "ipw (scad)")
-ipw_summary
+print(ipw_summary)
 
+# ============================================================================
+# SECTION 5: MASS IMPUTATION (MI) - OUTCOME MODELS
+# ============================================================================
 
-## ----mi-glm-lp-------------------------------------------------------------------------------------------------------
+# MI using outcome model (regression imputation)
+# Models the target variable using survey and population data
 est5_glm <- nonprob(
   outcome = single_shift ~ region + private + nace + size,
   svydesign = jvs_svy,
@@ -131,63 +223,80 @@ est5_glm <- nonprob(
   family_outcome = "gaussian"
 )
 
+# MI with Gaussian (Linear) Model
 extract(est5_glm)
 
+# ============================================================================
+# EXERCISE 9: MI with binomial model for binary outcome
+# ============================================================================
+# TODO: Repeat MI estimation using binomial family
+# The single_shift variable is actually binary (0/1)
+# So binomial/logistic model is more appropriate
+# Compare Gaussian vs Binomial model results
+# Which model gives more reasonable estimates?
 
-## ----mi-glm-binom----------------------------------------------------------------------------------------------------
-### Exercise 10 Use a binomial model instead of a Gaussian model for the single_shift variable
-extract(est5_glm_biom)
+# ============================================================================
+# EXERCISE 10: MI with Nearest Neighbor imputation
+# ============================================================================
+# TODO: Estimate mean using Nearest Neighbor (NN) imputation
+# NN imputes missing values by finding similar observations
+# Try different k values (number of neighbors): 3, 5, 10
+# How does k affect the point estimate?
+# How does k affect the standard error?
+# Is NN more or less stable than GLM imputation?
 
+# ============================================================================
+# EXERCISE 11: MI with Predictive Mean Matching (PMM)
+# ============================================================================
+# TODO: Estimate mean using Predictive Mean Matching (PMM)
+# PMM combines GLM predictions with NN matching
+# Try different k values (number of matches): 3, 5, 10
+# Set seed to 2024-11-27 for reproducibility
+# Compare with NN and GLM imputation methods
+# Which method gives the best estimates?
 
-## ----mi-glm-binom-summary--------------------------------------------------------------------------------------------
-summary(est5_glm_biom)
-
-
-## ----mi-glm-binom-structure------------------------------------------------------------------------------------------
-str(est5_glm_biom,1)
-
-
-## ----mi-glm-nn-------------------------------------------------------------------------------------------------------
-### Exercise 11 Use another mass imputation method - NN - in addition the number of neighbours (k) can be dealt with
-extract(est6_glm_nn)
-
-
-## ----mi-glm-pmm-1----------------------------------------------------------------------------------------------------
-### Exercise 12 Use another mass imputation method - PMM - in addition the number of neighbours (k) can be dealt with
-set.seed(2024-11-27)
-extract(est6_glm_pmm1)
-
-
-## ----mi-glm-pmm-2----------------------------------------------------------------------------------------------------
-set.seed(2024-11-27)
-
-extract(est6_glm_pmm2$output)
-
-
-## ----mi-glm-scad-----------------------------------------------------------------------------------------------------
-### Exercise 13 Add an additional variable selection step, e.g. SCAD
-set.seed(2024-11-27)
-
-## ----mi-glm-scad-result-----------------------------------------------------------------------------------------------
-extract(est7_glm_sel)
-
-## ----mi-glm-scad-summary---------------------------------------------------------------------------------------------
-summary(est7_glm_sel)
+set.seed(20241127)
 
 
-## ----mi-summary--------------------------------------------------------------------------------------------------
-mi_summary <- rbind(extract(est5_glm$output),
-                    extract(est5_glm_biom$output),
-                    extract(est6_glm_nn$output),
-                    extract(est6_glm_pmm1$output),
-                    extract(est6_glm_pmm2$output),
-                    extract(est7_glm_sel$output))
+# Try alternative PMM specification with different k
+set.seed(20241127)
+
+# ============================================================================
+# EXERCISE 12: MI with SCAD variable selection
+# ============================================================================
+# TODO: Estimate mean using MI with SCAD variable selection
+# Automatically selects relevant outcome model covariates
+# Set seed to 2024-11-27 for reproducibility
+# Compare selected variables with full outcome model
+# Does selection change the point estimate?
+# Are confidence intervals more precise with fewer variables?
+
+set.seed(20241127)
+
+# ============================================================================
+# MI SUMMARY: Compare all MI variants
+# ============================================================================
+
+mi_summary <- rbind(
+  extract(est5_glm),
+  extract(est5_glm_biom),
+  extract(est6_glm_nn),
+  extract(est6_glm_pmm1),
+  extract(est6_glm_pmm2),
+  extract(est7_glm_sel)
+)
 rownames(mi_summary) <- NULL
 mi_summary$est <- c("mi (lm)", "mi (glm)", "mi (nn)", "mi (pmm1)", "mi (pmm2)", "mi (glm, scad)")
-mi_summary
+print(mi_summary)
 
+# ============================================================================
+# SECTION 6: DOUBLY ROBUST (DR) ESTIMATION
+# ============================================================================
 
-## ----dr-glm-binom----------------------------------------------------------------------------------------------------
+# DR combines selection model and outcome model
+# Remains consistent if EITHER model is correctly specified
+# More robust than IPW or MI alone
+
 est8_dr1 <- nonprob(
   selection = ~ region + private + nace + size,
   outcome = single_shift ~ region + private + nace + size,
@@ -199,55 +308,93 @@ est8_dr1 <- nonprob(
   pop_size = sum(weights(jvs_svy))
 )
 
+# DR with Standard IPW and GLM Outcome
 extract(est8_dr1)
-
-## ----dr-glm-binom-summary--------------------------------------------------------------------------------------------
 summary(est8_dr1)
+str(est8_dr1, 1)
+
+# ============================================================================
+# EXERCISE 13 (DR): Use calibration for IPW component
+# ============================================================================
+# TODO: Estimate DR using calibrated IPW (GEE) instead of standard IPW
+# Add control_selection = control_sel(gee_h_fun = 1, est_method = 'gee')
+# Compare with standard DR (est8_dr1)
+# Does calibration improve the estimates?
+# Are standard errors smaller or larger?
+
+# ============================================================================
+# EXERCISE 14 (DR): Use bootstrap variance estimation
+# ============================================================================
+# TODO: Estimate DR using bootstrap variance
+# Set seed to 2024-11-27 for reproducibility
+# Try different num_boot values: 50, 100, 200
+# Compare bootstrap vs analytic variance from est8_dr1
+# Are bootstrap confidence intervals wider or narrower?
+
+set.seed(20241127)
 
 
-## ----dr-glm-binom-structure------------------------------------------------------------------------------------------
-str(est8_dr1,1)
+# ============================================================================
+# EXERCISE 15 (DR): Use SCAD variable selection
+# ============================================================================
+# TODO: Estimate DR with SCAD variable selection
+# Apply SCAD to selection model (IPW part)
+# Set seed to 2024-11-27 for reproducibility
+# Compare selected variables with full model
+# Does selection improve the point estimate?
+
+set.seed(20241127)
 
 
-## ----dr-glm-calib----------------------------------------------------------------------------------------------------
-### EX 13 Use a calibration method for inverse probability weighting part
-extract(est8_dr2)
+# ============================================================================
+# EXERCISE 16 (DR): SCAD with bias correction
+# ============================================================================
+# TODO: Estimate DR with SCAD and bias correction
+# Uses bias minimization approach for more robust inference
+# Set seed to 2024-11-27 for reproducibility
+# Compare with standard DR (est8_dr1) and SCAD DR (est9_dr1)
+# Which approach gives the most stable estimates?
+
+set.seed(20241127)
 
 
-## ----dr-glm-bootstrap------------------------------------------------------------------------------------------------
-### EX 14 Use a bootstrap variance for DR estimator
-set.seed(2024-11-27)
-extract(est8_dr3)
+# ============================================================================
+# DR SUMMARY: Compare all DR variants
+# ============================================================================
 
-
-## ----dr-glm-scad-----------------------------------------------------------------------------------------------------
-### EX 15 Add an additional variable selection step, e.g. SCAD
-set.seed(2024-11-27)
-set.seed(est9_dr1)
-
-
-## ----dr-glm-scad-bias-min--------------------------------------------------------------------------------------------
-### EX 16 Add an additional variable selection step, e.g. SCAD and estimate using bias minimization approach
-set.seed(2024-11-27)
-extract(est9_dr2)
-
-
-## ----dr-summary-------------------------------------------------------------------------------------------------
-dr_summary <- rbind(extract(est8_dr1$output),
-                    extract(est8_dr2$output),
-                    extract(est8_dr3$output),
-                    extract(est9_dr1$output),
-                    extract(est9_dr2$output))
+dr_summary <- rbind(
+  extract(est8_dr1),
+  extract(est8_dr2),
+  extract(est8_dr3),
+  extract(est9_dr1),
+  extract(est9_dr2)
+)
 rownames(dr_summary) <- NULL
-dr_summary$est <- c("dr (ipw)", "dr (ipw cal)", "dr (ipw, boot)", "dr (scad)", "dr (scad, min)")
-dr_summary
+dr_summary$est <- c("dr (ipw)", "dr (ipw cal)", "dr (ipw, boot)", "dr (scad)", "dr (scad, bc)")
+print(dr_summary)
 
+# ============================================================================
+# FINAL COMPARISON: ALL METHODS
+# ============================================================================
+# Combine all results
 
-## ----summary-plot------------------------------------------------------------------------------------------------
 results <- rbind(ipw_summary, mi_summary, dr_summary)
 
-ggplot(data = results, aes(y = est, x = mean, xmin = lower_bound, xmax = upper_bound)) +
+# Visualize all estimates with confidence intervals
+# The red dotted line shows the true population mean
+ggplot(
+  data = results,
+  aes(y = est, x = mean, xmin = lower_bound, xmax = upper_bound)
+) +
   geom_point() +
-  geom_vline(xintercept = mean(admin$single_shift), linetype = "dotted", color = "red") +
+  geom_vline(
+    xintercept = mean(admin$single_shift),
+    linetype = "dotted",
+    color = "red"
+  ) +
   geom_errorbar() +
-  labs(x = "Point estimator and confidence interval", y = "estimators")
+  labs(
+    x = "Point estimator and confidence interval",
+    y = "Estimation Methods"
+  ) +
+  theme_bw()
