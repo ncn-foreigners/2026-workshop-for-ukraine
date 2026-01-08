@@ -15,9 +15,10 @@ library("ggplot2")    # For data visualization
 # 1. DATA LOADING AND PREPARATION
 # ============================================================================
 
-# Load and inspect the nonprobability (JVS) survey data
+# Load and inspect the probability (JVS) survey data
 data("jvs")
 head(jvs)
+View(jvs)
 
 # Create a survey design object from the JVS data
 # This incorporates sampling weights and stratification information
@@ -28,7 +29,7 @@ jvs_svy <- svydesign(
   data = jvs
 )
 
-# Load and inspect the population/administrative data (target population)
+# Load and inspect the nonprobability sample (target population)
 data("admin")
 head(admin)
 View(admin)
@@ -37,6 +38,8 @@ View(admin)
 # 2. INVERSE PROBABILITY WEIGHTING (IPW) ESTIMATION
 # ============================================================================
 
+# P(nonprob sample = 1 | region, private, ...)
+
 # IPW Method 1: Using MLE for selection model estimation
 # This method estimates the probability of being in the nonprobability sample
 # given observed covariates, then inverts these probabilities for weighting
@@ -44,7 +47,7 @@ ipw_est1 <- nonprob(
   selection = ~ region + private + nace + size,  # Selection model formula
   target = ~ single_shift,                        # Target variable to estimate
   svydesign = jvs_svy,                            # Reference survey design
-  data = admin,                                   # Population data
+  data = admin,                                   # Non-probability sample
   method_selection = "logit"                      # Logistic regression for selection
 )
 
@@ -75,8 +78,10 @@ data.frame(
   ipw_gee = check_balance(~size-1, ipw_est2, 1)$balance
 )
 
+weights(ipw_est1) |> summary()
+
 # ============================================================================
-# 3. MISSING IMPUTATION (MI) / OUTCOME MODEL METHODS
+# 3. MASS IMPUTATION (MI) / OUTCOME MODEL METHODS
 # ============================================================================
 
 # MI Method 1: Generalized Linear Model (GLM) for outcome imputation (Kim et al JRSS A paper)
@@ -86,7 +91,7 @@ mi_est1 <- nonprob(
   svydesign = jvs_svy,
   data = admin,
   method_outcome = "glm",           # Generalized linear model
-  family_outcome = "binomial"        # Binary outcome (logistic regression)
+  family_outcome = "binomial"       # Binary outcome (logistic regression)
 )
 
 mi_est1
@@ -142,8 +147,8 @@ summary(dr_est1)
 # Applies additional bias correction and variance estimation improvements
 set.seed(2024)
 dr_est2 <- nonprob(
-  selection = ~ region + private + nace + size,
-  outcome = single_shift ~ region + private + nace + size,
+  selection = ~ private + size,
+  outcome = single_shift ~ private + size,
   svydesign = jvs_svy,
   data = admin,
   method_selection = "logit",
@@ -153,7 +158,7 @@ dr_est2 <- nonprob(
   control_inference = control_inf(
     bias_correction = TRUE,   # Apply bias correction
     vars_combine = TRUE,       # Combine variances optimally
-    vars_selection = TRUE      # Include selection model variance
+    vars_selection = TRUE      # Include selection model 
   )
 )
 
