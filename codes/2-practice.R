@@ -1,33 +1,55 @@
-library("nonprobsvy")
-library("ggplot2")  
+library(nonprobsvy)
+library(survey)
+library(ggplot2)
 
+## setup 
 data("jvs")
-head(jvs)
-
 jvs_svy <- svydesign(ids = ~ 1, 
                      weights = ~ weight,
                      strata = ~ size + nace + region,
                      data = jvs)
 
 data("admin")
-head(admin)
 
-ipw_est1 <- nonprob(
-  selection = ~ region + private + nace + size,
+## ----ipw-stadnard----------------------------------------------------------------------------------------------------
+est1_logit <- nonprob(
+  selection = ~ region,
   target = ~ single_shift,
   svydesign = jvs_svy,
   data = admin,
   method_selection = "logit"
 )
 
-ipw_est1
+### Exercise 1 Add nace and size variables to the model -- compare the results.
 
-summary(ipw_est1)
+### Exercise 2 Carry out an analogous inference using probit as the linking function.
 
-extract(ipw_est1)
+### Exercise 3 Carry out an analogous inference using cloglog as the linking function.
 
-ipw_est2 <- nonprob(
-  selection = ~ region + private + nace + size,
+
+est_ipw_standard <- rbind(cbind(est1_logit$output, est1_logit$confidence_interval),
+                          cbind(est1_probit$output, est1_probit$confidence_interval),
+                          cbind(est1_cloglog$output, est1_cloglog$confidence_interval))
+est_ipw_standard$est <- "ipw"
+rownames(est_ipw_standard) <- NULL
+est_ipw_standard
+
+
+## ----ipw-structure---------------------------------------------------------------------------------------------------
+str(est1_logit,1)
+
+
+## ----ipw-structure-sel-----------------------------------------------------------------------------------------------
+str(est1_logit$selection,1)
+
+
+## ----ipw-summary-----------------------------------------------------------------------------------------------------
+summary(est1_logit)
+
+
+## ----ipw-cal---------------------------------------------------------------------------------------------------------
+est2_logit <- nonprob(
+  selection = ~ size,
   target = ~ single_shift,
   svydesign = jvs_svy,
   data = admin,
@@ -35,54 +57,138 @@ ipw_est2 <- nonprob(
   control_selection = control_sel(gee_h_fun = 1, est_method = "gee")
 )
 
-ipw_est2
+### Exercise 4 Estimate with an another choice for h function.
 
-data.frame(ipw_mle=check_balance(~size-1, ipw_est1, 1)$balance,
-           ipw_gee=check_balance(~size-1, ipw_est2, 1)$balance)
+### Exercise 5 Change the set of dependent variables and compare the results.
 
-mi_est1 <- nonprob(
+### Exercise 6 Carry out an analogous inference using probit as the linking function.
+
+### Exercise 7 Carry out an analogous inference using cloglog as the linking function.
+
+est_ipw_calib <- rbind(cbind(est2_logit$output, est2_logit$confidence_interval),
+                       cbind(est2_probit$output, est2_probit$confidence_interval),
+                       cbind(est2_cloglog$output, est2_cloglog$confidence_interval))
+est_ipw_calib$est <- "ipw calib"
+rownames(est_ipw_calib) <- NULL
+est_ipw_calib
+
+
+## ----ipw-cal-weights----------------------------------------------------------------------------------------------------
+admin$ipw1_weight <- weights(est1_logit)
+admin$ipw2_weight <- weights(est2_logit)
+
+
+## ----ipw-cal-totals--------------------------------------------------------------------------------------------------
+c(jvs=sum(weights(jvs_svy)), ipw1_mle=sum(admin$ipw1_weight), ipw2_gee=sum(admin$ipw2_weight))
+
+
+## ----ipw-cal-klasa1--------------------------------------------------------------------------------------------------
+svytotal(~size, jvs_svy)
+
+
+## ----ipw-cal-klasa2--------------------------------------------------------------------------------------------------
+xtabs(ipw1_weight ~ size, admin)
+xtabs(ipw2_weight ~ size, admin)
+
+
+## ----ipw-bootstrap---------------------------------------------------------------------------------------------------
+### Exercise 8 Estimate the mean using the inverse probability weighting method with the bootstrap method for variance.
+### In addition, try playing with the number of iterations and arguments
+set.seed(2024-11-27)
+
+## bootstrap here
+est3_logit
+
+## ----ipw-bootstrap-summary-------------------------------------------------------------------------------------------
+summary(est3_logit)
+
+
+## ----ipw-scad--------------------------------------------------------------------------------------------------------
+### Exercise 9 Conduct inference with an additional variable selection step, e.g. SCAD
+set.seed(2024-11-27)
+
+
+## ----ipw-scad-summary------------------------------------------------------------------------------------------------
+summary(est4_logit)
+
+
+## ----ipw-comparison---------------------------------------------------------------------------------------------------
+ipw_summary <- rbind(extract(est1_logit$output),
+                     extract(est2_logit$output),
+                     extract(est3_logit$output),
+                     extract(est4_logit$output))
+rownames(ipw_summary) <- NULL
+ipw_summary$est <- c("ipw (st)", "ipw (cal)", "ipw (boot)", "ipw (scad)")
+ipw_summary
+
+
+## ----mi-glm-lp-------------------------------------------------------------------------------------------------------
+est5_glm <- nonprob(
   outcome = single_shift ~ region + private + nace + size,
   svydesign = jvs_svy,
   data = admin,
   method_outcome = "glm",
-  family_outcome = "binomial"
+  family_outcome = "gaussian"
 )
 
-mi_est1
+extract(est5_glm)
 
-mi_est2 <- nonprob(
-  outcome = single_shift ~ region + private + nace + size,
-  svydesign = jvs_svy,
-  data = admin,
-  method_outcome = "nn",
-  control_outcome = control_out(k = 5)
-)
-mi_est3 <- nonprob(
-  outcome = single_shift ~ region + private + nace + size,
-  svydesign = jvs_svy,
-  data = admin,
-  method_outcome = "pmm",
-  family_outcome = "binomial", 
-  control_outcome = control_out(k = 5)
-)
 
-rbind("NN" = extract(mi_est2)[, 2:3], "PMM" = extract(mi_est3)[, 2:3])
+## ----mi-glm-binom----------------------------------------------------------------------------------------------------
+### Exercise 10 Use a binomial model instead of a Gaussian model for the single_shift variable
+extract(est5_glm_biom)
 
-dr_est1 <- nonprob(
-  selection = ~ region + private + nace + size,
-  outcome = single_shift ~ region + private + nace + size,
-  svydesign = jvs_svy,
-  data = admin,
-  method_selection = "logit",
-  method_outcome = "glm",
-  family_outcome = "binomial"
-)
-dr_est1
 
-summary(dr_est1)
+## ----mi-glm-binom-summary--------------------------------------------------------------------------------------------
+summary(est5_glm_biom)
 
-set.seed(2024)
-dr_est2 <- nonprob(
+
+## ----mi-glm-binom-structure------------------------------------------------------------------------------------------
+str(est5_glm_biom,1)
+
+
+## ----mi-glm-nn-------------------------------------------------------------------------------------------------------
+### Exercise 11 Use another mass imputation method - NN - in addition the number of neighbours (k) can be dealt with
+extract(est6_glm_nn)
+
+
+## ----mi-glm-pmm-1----------------------------------------------------------------------------------------------------
+### Exercise 12 Use another mass imputation method - PMM - in addition the number of neighbours (k) can be dealt with
+set.seed(2024-11-27)
+extract(est6_glm_pmm1)
+
+
+## ----mi-glm-pmm-2----------------------------------------------------------------------------------------------------
+set.seed(2024-11-27)
+
+extract(est6_glm_pmm2$output)
+
+
+## ----mi-glm-scad-----------------------------------------------------------------------------------------------------
+### Exercise 13 Add an additional variable selection step, e.g. SCAD
+set.seed(2024-11-27)
+
+## ----mi-glm-scad-result-----------------------------------------------------------------------------------------------
+extract(est7_glm_sel)
+
+## ----mi-glm-scad-summary---------------------------------------------------------------------------------------------
+summary(est7_glm_sel)
+
+
+## ----mi-summary--------------------------------------------------------------------------------------------------
+mi_summary <- rbind(extract(est5_glm$output),
+                    extract(est5_glm_biom$output),
+                    extract(est6_glm_nn$output),
+                    extract(est6_glm_pmm1$output),
+                    extract(est6_glm_pmm2$output),
+                    extract(est7_glm_sel$output))
+rownames(mi_summary) <- NULL
+mi_summary$est <- c("mi (lm)", "mi (glm)", "mi (nn)", "mi (pmm1)", "mi (pmm2)", "mi (glm, scad)")
+mi_summary
+
+
+## ----dr-glm-binom----------------------------------------------------------------------------------------------------
+est8_dr1 <- nonprob(
   selection = ~ region + private + nace + size,
   outcome = single_shift ~ region + private + nace + size,
   svydesign = jvs_svy,
@@ -90,75 +196,58 @@ dr_est2 <- nonprob(
   method_selection = "logit",
   method_outcome = "glm",
   family_outcome = "binomial",
-  verbose = TRUE,
-  control_inference = control_inf(bias_correction = TRUE,
-                                  vars_combine = TRUE,
-                                  vars_selection = TRUE)
-)
-dr_est2
-
-df_s <- rbind(extract(ipw_est1), extract(ipw_est2), extract(mi_est1),
-              extract(mi_est2), extract(mi_est3), extract(dr_est1), 
-              extract(dr_est2))
-
-df_s$est <- c("IPW (MLE)", "IPW (GEE)", "MI (GLM)", "MI (NN)", 
-              "MI (PMM)", "DR", "DR (BM)")
-
-ggplot(data = df_s, 
-       aes(y = est, x = mean, xmin = lower_bound, xmax = upper_bound)) + 
-  geom_point() + 
-  geom_vline(xintercept = mean(admin$single_shift), 
-             linetype = "dotted", color = "red") + 
-  geom_errorbar() + 
-  labs(x = "Point estimator and confidence interval", y = "Estimators") +
-  theme_bw()
-
-
-set.seed(2024)
-ipw_est1_boot <- nonprob(
-  selection = ~ region + private + nace + size,
-  target = ~ single_shift,
-  svydesign = jvs_svy,
-  data = admin,
-  method_selection = "logit",
-  control_inference = control_inf(var_method = "bootstrap", num_boot = 50),
-  verbose = FALSE
+  pop_size = sum(weights(jvs_svy))
 )
 
-rbind("IPW analytic variance"  = extract(ipw_est1)[, 2:3],
-      "IPW bootstrap variance" = extract(ipw_est1_boot)[, 2:3])
+extract(est8_dr1)
 
-head(ipw_est1_boot$boot_sample, n = 3)
+## ----dr-glm-binom-summary--------------------------------------------------------------------------------------------
+summary(est8_dr1)
 
-set.seed(2024)
-mi_est1_sel <- nonprob(
-  outcome = single_shift ~ region + private + nace + size,
-  svydesign = jvs_svy,
-  data = admin,
-  method_outcome = "glm",
-  family_outcome = "binomial" ,
-  control_outcome = control_out(nfolds = 5, nlambda = 25, penalty = "lasso"),
-  control_inference = control_inf(vars_selection = TRUE),
-  verbose = TRUE
-)
 
-rbind("MI without var sel" = extract(mi_est1)[, 2:3],
-      "MI with var sel"    = extract(mi_est1_sel)[, 2:3])
+## ----dr-glm-binom-structure------------------------------------------------------------------------------------------
+str(est8_dr1,1)
 
-round(coef(mi_est1_sel)$coef_out[, 1], 4)
 
-round(coef(ipw_est1)$coef_sel[, 1], 4)
+## ----dr-glm-calib----------------------------------------------------------------------------------------------------
+### EX 13 Use a calibration method for inverse probability weighting part
+extract(est8_dr2)
 
-nobs(dr_est1)
 
-confint(dr_est1, level = 0.99)
+## ----dr-glm-bootstrap------------------------------------------------------------------------------------------------
+### EX 14 Use a bootstrap variance for DR estimator
+set.seed(2024-11-27)
+extract(est8_dr3)
 
-summary(weights(dr_est1))
 
-res_glm <- method_glm(
-  y_nons = admin$single_shift,
-  X_nons = model.matrix(~ region + private + nace + size, admin),
-  X_rand = model.matrix(~ region + private + nace + size, jvs),
-  svydesign = jvs_svy)
-res_glm
+## ----dr-glm-scad-----------------------------------------------------------------------------------------------------
+### EX 15 Add an additional variable selection step, e.g. SCAD
+set.seed(2024-11-27)
+set.seed(est9_dr1)
 
+
+## ----dr-glm-scad-bias-min--------------------------------------------------------------------------------------------
+### EX 16 Add an additional variable selection step, e.g. SCAD and estimate using bias minimization approach
+set.seed(2024-11-27)
+extract(est9_dr2)
+
+
+## ----dr-summary-------------------------------------------------------------------------------------------------
+dr_summary <- rbind(extract(est8_dr1$output),
+                    extract(est8_dr2$output),
+                    extract(est8_dr3$output),
+                    extract(est9_dr1$output),
+                    extract(est9_dr2$output))
+rownames(dr_summary) <- NULL
+dr_summary$est <- c("dr (ipw)", "dr (ipw cal)", "dr (ipw, boot)", "dr (scad)", "dr (scad, min)")
+dr_summary
+
+
+## ----summary-plot------------------------------------------------------------------------------------------------
+results <- rbind(ipw_summary, mi_summary, dr_summary)
+
+ggplot(data = results, aes(y = est, x = mean, xmin = lower_bound, xmax = upper_bound)) +
+  geom_point() +
+  geom_vline(xintercept = mean(admin$single_shift), linetype = "dotted", color = "red") +
+  geom_errorbar() +
+  labs(x = "Point estimator and confidence interval", y = "estimators")

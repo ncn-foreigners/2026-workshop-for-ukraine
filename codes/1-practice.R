@@ -9,243 +9,168 @@
 # install.packages("survey")
 # install.packages("ggplot")
 
-library(sampling)
-library(survey)
-library(nonprobsvy)
-library(ggplot2)
+library("nonprobsvy")
+library("ggplot2")  
 
-###########################
-### Simulation
-###########################
+data("jvs")
+head(jvs)
 
-seed_for_sim <- 2026-1-7
-set.seed(seed_for_sim)
-N <- 10000
-n_A <- 500
-p <- 50
-alpha_vec1 <- c(-2, 1, 1, 1,1, rep(0, p-5))
-alpha_vec2 <- c(0,0,0,3,3,3,3, rep(0, p-7))
-beta_vec <- c(1,0,0,1,1,1,1, rep(0, p-7))
-X <- cbind("(Intercept)"=1, matrix(rnorm(N*(p-1)), nrow=N, byrow=T, dimnames = list(NULL, paste0("X",1:(p-1)))))
-Y <- 1 + as.numeric(X %*% beta_vec) +   rnorm(N) ## linear model
-#Y <- 1 + exp(3*sin(as.numeric(X %*% beta_vec))) + X[, "X5"] + X[, "X6"] + rnorm(N) ## nonlinear model
-pi_B <- plogis(as.numeric(X %*% alpha_vec1)) ## linear probability
-#pi_B <- plogis(3.5 + as.numeric(log(X^2) %*% alpha_vec2) - sin(X[, "X3"] + X[, "X4"]) - X[,"X5"] + X[, "X6"]) ## nonlinear probability
-flag_B <- rbinom(N, 1, prob = pi_B)
-pi_A <- inclusionprobabilities(0.25 + abs(X[, "X1"]) + 0.03*abs(Y), n_A)
-flag_A <- UPpoisson(pik = pi_A)
-pop_data <- data.frame(pi_A, pi_B, flag_A, flag_B, Y, X[, 2:p])
+jvs_svy <- svydesign(ids = ~ 1, 
+                     weights = ~ weight,
+                     strata = ~ size + nace + region,
+                     data = jvs)
 
-X_totals <- colSums(X)
-X_means <- colMeans(X[,-1])
-sample_A_svy <- svydesign(ids = ~ 1,
-                          probs = ~ pi_A,
-                          pps = "brewer",
-                          data = pop_data[pop_data$flag_A == 1, ])
+data("admin")
+head(admin)
 
-sample_B <- pop_data[pop_data$flag_B == 1, ]
-
-y_true <- mean(Y)
-y_true
-
-y_naive <- mean(sample_B$Y)
-
-###########################
-### Inverse Probability Weighting
-###########################
-
-
-### Maximum Likelihood Approach
-ipw_logit_sample <- nonprob(selection = ~ X1 + X2 + X3 + X4,
-                            target = ~ Y,
-                            data = sample_B,
-                            svydesign = sample_A_svy,
-                            method_selection = "logit")
-
-cbind(ipw_logit_sample$output,ipw_logit_sample$confidence_interval)
-
-### Calibation constrains with GEE aproach
-ipw_logit_sample_gee <- nonprob(selection = ~ X1 + X2 + X3 + X4,
-                                target = ~ Y,
-                                data = sample_B,
-                                svydesign = sample_A_svy,
-                                method_selection = "logit",
-                                control_selection = control_sel(est_method = "gee"))
-
-cbind(ipw_logit_sample_gee$output,ipw_logit_sample_gee$confidence_interval)
-
-
-###########################
-### Mass Imputation
-###########################
-
-### Nearest Neighbour
-mi_sample_nn <- nonprob(outcome = Y ~ X3 + X4 + X5 + X6,
-                        data = sample_B,
-                        svydesign = sample_A_svy,
-                        method_outcome = "nn",
-                        family_outcome = "gaussian",
-                        control_outcome = control_out(k = 3))
-
-cbind(mi_sample_nn$output,mi_sample_nn$confidence_interval)
-
-### Predictive Mean Matching y_hat - y_hat
-mi_sample_pmm <- nonprob(outcome = Y ~ X3 + X4 + X5 + X6,
-                        data = sample_B,
-                        svydesign = sample_A_svy,
-                        method_outcome = "pmm",
-                        family_outcome = "gaussian")
-
-cbind(mi_sample_pmm$output,mi_sample_pmm$confidence_interval)
-
-### GLM
-mi_sample <- nonprob(outcome = Y ~ X3 + X4 + X5 + X6,
-                     data = sample_B,
-                     svydesign = sample_A_svy,
-                     method_outcome = "glm",
-                     family_outcome = "gaussian")
-
-cbind(mi_sample$output,mi_sample$confidence_interval)
-
-###########################
-### Doubly Robust Method
-###########################
-
-### Maximum Likelihood and GLM
-dr_logit_sample_mle <- nonprob(selection = ~ X1 + X2 + X3 + X4,
-                               outcome = Y ~ X1 + X2 + X3 + X4,
-                               data = sample_B,
-                               svydesign = sample_A_svy,
-                               method_selection = "logit")
-
-cbind(dr_logit_sample_mle$output,dr_logit_sample_mle$confidence_interval)
-
-### GEE and GLM
-dr_logit_sample_gee <- nonprob(selection = ~ X1 + X2 + X3 + X4,
-                               outcome = Y ~ X1 + X2 + X3 + X4,
-                               data = sample_B,
-                               svydesign = sample_A_svy,
-                               method_selection = "logit",
-                               control_selection = control_sel(est_method = "gee"))
-
-cbind(dr_logit_sample_gee$output,dr_logit_sample_gee$confidence_interval)
-
-###########################
-### Variable Selection
-###########################
-
-### SCAD penalty for IPW
-ipw_logit_sample_scad <- nonprob(selection = ~ X1 + X2 + X3 + X4 + X5 + X6 + X7 + X8 + X9 + X10,
-                                 target = ~ Y,
-                                 data = sample_B,
-                                 svydesign = sample_A_svy,
-                                 method_selection = "logit",
-                                 control_selection = control_sel(penalty = "SCAD"),
-                                 control_inference = control_inf(vars_selection = TRUE),
-                                 verbose = TRUE)
-
-cbind(ipw_logit_sample_scad$output,ipw_logit_sample_scad$confidence_interval)
-
-# ### SCAD penalty for Mass Imputation
-# mi_sample_scad <- nonprob(outcome = Y ~ X1 + X2 + X3 + X4 + X5 + X6 + X7 + X8 + X9 + X10,
-#                           data = sample_B,
-#                           svydesign = sample_A_svy,
-#                           method_outcome = "glm",
-#                           family_outcome = "gaussian",
-#                           control_outcome = control_sel(penalty = "SCAD"),
-#                           control_inference = control_inf(vars_selection = TRUE),
-#                           verbose = TRUE)
-
-# cbind(mi_sample_scad$output,mi_sample_scad$confidence_interval)
-
-### SCAD penalty for DR method
-dr_logit_sample_scad <- nonprob(selection = ~ X1 + X2 + X3 + X4 + X5 + X6 + X7 + X8 + X9 + X10,
-                                outcome = Y ~ X1 + X2 + X3 + X4 + X5 + X6 + X7 + X8 + X9 + X10,
-                                data = sample_B,
-                                svydesign = sample_A_svy,
-                                method_selection = "logit",
-                                control_selection = control_sel(penalty = "SCAD"),
-                                control_inference = control_inf(vars_selection = TRUE),
-                                verbose = TRUE)
-
-coef(dr_logit_sample_scad)
-
-cbind(dr_logit_sample_scad$output, dr_logit_sample_scad$confidence_interval)
-
-### SCAD penalty for DR with bias minimization approach
-
-dr_logit_sample_mm_scad <- nonprob(selection = ~ X1 + X2 + X3 + X4 + X5 + X6 + X7 + X8 + X9 + X10,
-                                   outcome = Y ~ X1 + X2 + X3 + X4 + X5 + X6 + X7 + X8 + X9 + X10,
-                                   data = sample_B,
-                                   svydesign = sample_A_svy,
-                                   method_selection = "logit",
-                                   control_selection = control_sel(penalty = "SCAD"),
-                                   control_inference = control_inf(vars_selection = TRUE,
-                                                                  bias_correction = TRUE,
-                                                                  vars_combine = TRUE),
-                                   verbose = TRUE)
-
-cbind(dr_logit_sample_mm_scad$output, dr_logit_sample_mm_scad$confidence_interval)
-
-###########################
-### BOOTSTRAP
-###########################
-
-# MI
-mi_sample_glm_boot <- nonprob(outcome = Y ~ X3 + X4 + X5 + X6,
-                             data = sample_B,
-                             svydesign = sample_A_svy,
-                             method_outcome = "glm",
-                             family_outcome = "gaussian",
-                             control_inference = control_inf(var_method = "bootstrap", num_boot = 100),
-                             verbose = TRUE)
-
-cbind(mi_sample_glm_boot$output,mi_sample_glm_boot$confidence_interval)
-
-### IPW
-ipw_logit_sample_boot <- nonprob(selection = ~ X1 + X2 + X3 + X4,
-                                 target = ~ Y,
-                                 data = sample_B,
-                                 svydesign = sample_A_svy,
-                                 method_selection = "logit",
-                                 control_inference = control_inf(var_method = "bootstrap", num_boot = 100),
-                                 verbose = TRUE)
-
-cbind(ipw_logit_sample_boot$output,ipw_logit_sample_boot$confidence_interval)
-
-
-# DR
-dr_logit_sample_mle_boot <- nonprob(selection = ~ X1 + X2 + X3 + X4,
-                                    outcome = Y ~ X1 + X2 + X3 + X4,
-                                    data = sample_B,
-                                    svydesign = sample_A_svy,
-                                    method_selection = "logit",
-                                    control_inference = control_inf(var_method = "bootstrap", num_boot = 50),
-                                    verbose = TRUE)
-cbind(dr_logit_sample_mle_boot$output,dr_logit_sample_mle_boot$confidence_interval)
-
-tab_res <- rbind(
-  cbind(est="ipw with sample", ipw_logit_sample$output,ipw_logit_sample$confidence_interval),
-  cbind(est="ipw with sample (gee h=1)" , ipw_logit_sample_gee$output,ipw_logit_sample_gee$confidence_interval),
-  cbind(est="ipw with sample (mle bootstrap)" , ipw_logit_sample_boot$output,ipw_logit_sample_boot$confidence_interval),
-  cbind(est="ipw with sample SCAD" , ipw_logit_sample_scad$output,ipw_logit_sample_scad$confidence_interval),
-  cbind(est="mi with sample (glm)" , mi_sample$output,mi_sample$confidence_interval),
-  cbind(est="mi with sample (nn)" , mi_sample_nn$output,mi_sample_nn$confidence_interval),
-  cbind(est="mi with sample (pmm)" , mi_sample_pmm$output,mi_sample_pmm$confidence_interval),
-  #cbind(est="mi with sample (glm) SCAD" , mi_sample_scad$output, mi_sample_scad$confidence_interval),
-  cbind(est="mi with sample (glm bootstrap)" , mi_sample_glm_boot$output, mi_sample_glm_boot$confidence_interval)
-  #cbind(est="dr with sample (glm)" , dr_logit_sample_mle$output,dr_logit_sample_mle$confidence_interval),
-  #cbind(est="dr with sample (gee h=1)" , dr_logit_sample_gee$output,dr_logit_sample_gee$confidence_interval),
-  #cbind(est="dr with sample (mle) SCAD" , dr_logit_sample_scad$output,dr_logit_sample_scad$confidence_interval),
-  #cbind(est="dr with sample (bias min) SCAD", dr_logit_sample_mm_scad$output, dr_logit_sample_mm_scad$confidence_interval),
-  #cbind(est="dr with sample (mle bootstrap) ", dr_logit_sample_mle_boot$output, dr_logit_sample_mle_boot$confidence_interval)
+ipw_est1 <- nonprob(
+  selection = ~ region + private + nace + size,
+  target = ~ single_shift,
+  svydesign = jvs_svy,
+  data = admin,
+  method_selection = "logit"
 )
 
-tab_res
+ipw_est1
 
-ggplot(data = tab_res, aes(x = est, y = mean, ymin = lower_bound, ymax = upper_bound)) +
-  geom_point() +
-  geom_pointrange() +
-  geom_hline(yintercept = y_true, linetype = "dashed", color = "darkgreen") +
-  geom_hline(yintercept = y_naive, linetype = "dashed", color = "red") +
-  coord_flip()
+summary(ipw_est1)
+
+extract(ipw_est1)
+
+ipw_est2 <- nonprob(
+  selection = ~ region + private + nace + size,
+  target = ~ single_shift,
+  svydesign = jvs_svy,
+  data = admin,
+  method_selection = "logit",
+  control_selection = control_sel(gee_h_fun = 1, est_method = "gee")
+)
+
+ipw_est2
+
+data.frame(ipw_mle=check_balance(~size-1, ipw_est1, 1)$balance,
+           ipw_gee=check_balance(~size-1, ipw_est2, 1)$balance)
+
+mi_est1 <- nonprob(
+  outcome = single_shift ~ region + private + nace + size,
+  svydesign = jvs_svy,
+  data = admin,
+  method_outcome = "glm",
+  family_outcome = "binomial"
+)
+
+mi_est1
+
+mi_est2 <- nonprob(
+  outcome = single_shift ~ region + private + nace + size,
+  svydesign = jvs_svy,
+  data = admin,
+  method_outcome = "nn",
+  control_outcome = control_out(k = 5)
+)
+mi_est3 <- nonprob(
+  outcome = single_shift ~ region + private + nace + size,
+  svydesign = jvs_svy,
+  data = admin,
+  method_outcome = "pmm",
+  family_outcome = "binomial", 
+  control_outcome = control_out(k = 5)
+)
+
+rbind("NN" = extract(mi_est2)[, 2:3], "PMM" = extract(mi_est3)[, 2:3])
+
+dr_est1 <- nonprob(
+  selection = ~ region + private + nace + size,
+  outcome = single_shift ~ region + private + nace + size,
+  svydesign = jvs_svy,
+  data = admin,
+  method_selection = "logit",
+  method_outcome = "glm",
+  family_outcome = "binomial"
+)
+dr_est1
+
+summary(dr_est1)
+
+set.seed(2024)
+dr_est2 <- nonprob(
+  selection = ~ region + private + nace + size,
+  outcome = single_shift ~ region + private + nace + size,
+  svydesign = jvs_svy,
+  data = admin,
+  method_selection = "logit",
+  method_outcome = "glm",
+  family_outcome = "binomial",
+  verbose = TRUE,
+  control_inference = control_inf(bias_correction = TRUE,
+                                  vars_combine = TRUE,
+                                  vars_selection = TRUE)
+)
+dr_est2
+
+df_s <- rbind(extract(ipw_est1), extract(ipw_est2), extract(mi_est1),
+              extract(mi_est2), extract(mi_est3), extract(dr_est1), 
+              extract(dr_est2))
+
+df_s$est <- c("IPW (MLE)", "IPW (GEE)", "MI (GLM)", "MI (NN)", 
+              "MI (PMM)", "DR", "DR (BM)")
+
+ggplot(data = df_s, 
+       aes(y = est, x = mean, xmin = lower_bound, xmax = upper_bound)) + 
+  geom_point() + 
+  geom_vline(xintercept = mean(admin$single_shift), 
+             linetype = "dotted", color = "red") + 
+  geom_errorbar() + 
+  labs(x = "Point estimator and confidence interval", y = "Estimators") +
+  theme_bw()
+
+
+set.seed(2024)
+ipw_est1_boot <- nonprob(
+  selection = ~ region + private + nace + size,
+  target = ~ single_shift,
+  svydesign = jvs_svy,
+  data = admin,
+  method_selection = "logit",
+  control_inference = control_inf(var_method = "bootstrap", num_boot = 50),
+  verbose = TRUE
+)
+
+rbind("IPW analytic variance"  = extract(ipw_est1)[, 2:3],
+      "IPW bootstrap variance" = extract(ipw_est1_boot)[, 2:3])
+
+head(ipw_est1_boot$boot_sample, n = 3)
+
+set.seed(2024)
+mi_est1_sel <- nonprob(
+  outcome = single_shift ~ region + private + nace + size,
+  svydesign = jvs_svy,
+  data = admin,
+  method_outcome = "glm",
+  family_outcome = "binomial" ,
+  control_outcome = control_out(nfolds = 5, nlambda = 25, penalty = "lasso"),
+  control_inference = control_inf(vars_selection = TRUE),
+  verbose = TRUE
+)
+
+rbind("MI without var sel" = extract(mi_est1)[, 2:3],
+      "MI with var sel"    = extract(mi_est1_sel)[, 2:3])
+
+round(coef(mi_est1_sel)$coef_out[, 1], 4)
+
+round(coef(ipw_est1)$coef_sel[, 1], 4)
+
+nobs(dr_est1)
+
+confint(dr_est1, level = 0.99)
+
+summary(weights(dr_est1))
+
+res_glm <- method_glm(
+  y_nons = admin$single_shift,
+  X_nons = model.matrix(~ region + private + nace + size, admin),
+  X_rand = model.matrix(~ region + private + nace + size, jvs),
+  svydesign = jvs_svy)
+
+res_glm
+
